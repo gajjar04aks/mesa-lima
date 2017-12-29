@@ -37,10 +37,17 @@ static void ppir_codegen_encode_varying(ppir_node *node, void *code)
 
    ppir_dest *dest = &load->dest;
    int index = ppir_target_get_dest_reg_index(dest);
+
+   if ((dest->type == ppir_target_pipeline) &&
+       (dest->pipeline == ppir_pipeline_reg_discard))
+      index = 15 << 2;
+
+   ppir_debug("varying dest index %d\n", index);
    f->imm.dest = index >> 2;
    f->imm.mask = dest->write_mask << (index & 0x3);
 
-   if (node->op == ppir_op_load_varying) {
+   if ((node->op == ppir_op_load_varying) ||
+      (node->op == ppir_op_load_coords)) {
       int num_components = load->num_components;
       int alignment = num_components == 3 ? 3 : num_components - 1;
 
@@ -59,7 +66,14 @@ static void ppir_codegen_encode_varying(ppir_node *node, void *code)
 
 static void ppir_codegen_encode_texld(ppir_node *node, void *code)
 {
-   
+   ppir_codegen_field_sampler *f = code;
+   ppir_load_texture_node *ldtex = ppir_node_to_load_texture(node);
+
+   f->index = ldtex->sampler;
+   f->lod_bias_en = 0;
+   f->type = ppir_codegen_sampler_type_2d;
+   f->offset_en = 0;
+   f->unknown_2 = 0x39001;
 }
 
 static void ppir_codegen_encode_uniform(ppir_node *node, void *code)
@@ -124,6 +138,7 @@ static void ppir_codegen_encode_vec_mul(ppir_node *node, void *code)
    ppir_src *src = alu->src;
    int index = ppir_target_get_src_reg_index(src);
    f->arg0_source = index >> 2;
+   ppir_debug("arg0: %d\n", index);
    f->arg0_swizzle = encode_swizzle(src->swizzle, index & 0x3, dest_shift);
    f->arg0_absolute = src->absolute;
    f->arg0_negate = src->negate;
@@ -132,6 +147,7 @@ static void ppir_codegen_encode_vec_mul(ppir_node *node, void *code)
       src = alu->src + 1;
       index = ppir_target_get_src_reg_index(src);
       f->arg1_source = index >> 2;
+      ppir_debug("arg1: %d\n", index);
       f->arg1_swizzle = encode_swizzle(src->swizzle, index & 0x3, dest_shift);
       f->arg1_absolute = src->absolute;
       f->arg1_negate = src->negate;
@@ -423,6 +439,9 @@ static int encode_instr(ppir_instr *instr, void *code, void *last_code)
          ctrl->fields |= 1 << i;
       }
    }
+
+   if (instr->slots[PPIR_INSTR_SLOT_TEXLD])
+      ctrl->sync = true;
 
    for (int i = 0; i < 2; i++) {
       if (instr->constant[i].num) {

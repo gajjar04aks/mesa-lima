@@ -234,6 +234,40 @@ static bool ppir_lower_vec_to_scalar(ppir_block *block, ppir_node *node)
    return true;
 }
 
+static bool ppir_lower_texture(ppir_block *block, ppir_node *node)
+{
+   ppir_load_texture_node *tex = ppir_node_to_load_texture(node);
+   ppir_node *pred;
+
+   /* We expect a single predecessor for tex load node */
+   if (!ppir_node_has_single_pred(node)) {
+      ppir_debug("ldtex has several preds\n");
+      return false;
+   }
+
+   pred = ppir_node_first_pred(node);
+   if (pred->type == ppir_node_type_load &&
+       pred->op == ppir_op_load_varying) {
+      /* If ldtex is the only successor of load_varying node
+       * we're good. Just change load_varying op type to load_coords.
+       * ldtex will be inserted into load_coords instruction
+       */
+      if (ppir_node_has_single_succ(pred)) {
+         pred->op = ppir_op_load_coords;
+         ppir_load_node *load = ppir_node_to_load(pred);
+         load->dest.type = ppir_target_pipeline;
+         load->dest.pipeline = ppir_pipeline_reg_discard;
+         tex->src_coords.type = ppir_target_pipeline;
+         tex->src_coords.pipeline = ppir_pipeline_reg_sampler;
+         return true;
+      }
+   }
+
+   /* Otherwise we need to create load_varying node */
+   ppir_debug("texld coords aren't in varying. Not supported yet\n");
+   return false;
+}
+
 static bool (*ppir_lower_funcs[ppir_op_num])(ppir_block *, ppir_node *) = {
    [ppir_op_const] = ppir_lower_const,
    [ppir_op_dot2] = ppir_lower_dot,
@@ -244,6 +278,7 @@ static bool (*ppir_lower_funcs[ppir_op_num])(ppir_block *, ppir_node *) = {
    [ppir_op_rsqrt] = ppir_lower_vec_to_scalar,
    [ppir_op_log2] = ppir_lower_vec_to_scalar,
    [ppir_op_exp2] = ppir_lower_vec_to_scalar,
+   [ppir_op_load_texture] = ppir_lower_texture,
 };
 
 bool ppir_lower_prog(ppir_compiler *comp)

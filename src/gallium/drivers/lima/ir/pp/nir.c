@@ -259,8 +259,31 @@ static ppir_node *ppir_emit_ssa_undef(ppir_block *block, nir_instr *ni)
 
 static ppir_node *ppir_emit_tex(ppir_block *block, nir_instr *ni)
 {
-   ppir_error("nir_tex_instr not support\n");
-   return NULL;
+   nir_tex_instr *instr = nir_instr_as_tex(ni);
+   ppir_load_texture_node *node;
+
+   if (instr->op != nir_texop_tex) {
+      ppir_error("unsupported texop %d\n", instr->op);
+   }
+
+   node = ppir_node_create_dest(block, ppir_op_load_texture, &instr->dest, 0);
+   if (!node)
+      return NULL;
+
+   node->sampler = instr->texture_index;
+   node->sampler_dim = instr->sampler_dim;
+
+   for (int i = 0; i < instr->num_srcs; i++) {
+      switch (instr->src[i].src_type) {
+      case nir_tex_src_coord:
+         ppir_node_add_src(block->comp, &node->node, &node->src_coords, &instr->src[i].src);
+         break;
+      default:
+         unreachable("unknown texture source");
+      }
+   }
+
+   return &node->node;
 }
 
 static ppir_node *ppir_emit_jump(ppir_block *block, nir_instr *ni)
@@ -405,6 +428,8 @@ bool ppir_compile_nir(struct lima_fs_shader_state *prog, struct nir_shader *nir,
 
    if (!ppir_node_to_instr(comp))
       goto err_out0;
+
+   ppir_node_print_prog(comp);
 
    if (!ppir_schedule_prog(comp))
       goto err_out0;
