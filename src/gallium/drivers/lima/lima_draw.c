@@ -606,6 +606,7 @@ lima_pack_render_state(struct lima_context *ctx)
 
    /* need more investigation */
    render->multi_sample = 0x0000F807;
+   render->multi_sample |= 0x68;
 
    render->shader_address =
       (ctx->pp_buffer->va + pp_fs_program_offset +
@@ -620,6 +621,12 @@ lima_pack_render_state(struct lima_context *ctx)
    /* more investigation */
    render->aux0 = 0x00000300 | (ctx->vs->varying_stride >> 3);
    render->aux1 = 0x00003000;
+
+   if (ctx->bound_textures) {
+      render->textures_address = ctx->tex_descs->va;
+      render->aux0 |= ctx->bound_textures << 14;
+      render->aux0 |= 0x20;
+   }
 
    if (ctx->buffer_state[lima_ctx_buff_pp_uniform].size) {
        render->uniforms_address = ctx->pp_buffer->va + pp_uniform_array_offset;

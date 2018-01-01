@@ -29,6 +29,7 @@
 
 #include "pipe/p_state.h"
 
+#include "lima_screen.h"
 #include "lima_context.h"
 #include "lima_resource.h"
 
@@ -429,9 +430,17 @@ lima_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
                         const struct pipe_sampler_view *cso)
 {
    struct lima_sampler_view *so = CALLOC_STRUCT(lima_sampler_view);
+   struct lima_context *ctx = lima_context(pctx);
+   struct lima_screen *screen = lima_screen(pctx->screen);
+   struct lima_resource *lima_res = lima_resource(prsc);
+   int width, height, format;
+   int flag0, flag1, layout;
+   uint32_t *desc;
 
    if (!so)
       return NULL;
+
+   debug_printf("%s: prsc: %p - %p\n", __func__, prsc, so);
 
    so->base = *cso;
 
@@ -440,8 +449,57 @@ lima_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
    so->base.reference.count = 1;
    so->base.context = pctx;
 
-   debug_printf("%s: prsc: %p - %p\n", __func__, prsc, so);
+   so->tex_desc = lima_buffer_alloc(screen, 4096, LIMA_BUFFER_ALLOC_MAP |
+                                                  LIMA_BUFFER_ALLOC_VA);
 
+   desc = so->tex_desc->map;
+
+   width = prsc->width0;
+   height = prsc->height0;
+   format = 0x16; /* LIMA_TEXEL_FORMAT_RGBA */
+   flag0 = 1;
+   flag1 = 0;
+   layout = 3;
+
+   desc[0] = (flag0 << 7) || (flag1 << 6) | format;
+   /* Not cubemap */
+   desc[1] = 0x400;
+   desc[2] = (width << 22);
+   desc[3] = 0x10000 | (height << 3) || (width >> 10);
+   desc[6] = layout << 13;
+
+   lima_buffer_update(lima_res->buffer, LIMA_BUFFER_ALLOC_MAP | LIMA_BUFFER_ALLOC_VA);
+   /* attach level 0 */
+   desc[6] &= ~0xc0000000;
+   desc[6] |= (lima_res->buffer->va + 1024 * 1024) << 24;
+   desc[7] &= ~0x00ffffff;
+   desc[7] |= (lima_res->buffer->va + 1024 * 1024) >> 8;
+   printf("level 0 va: %.8x\n", lima_res->buffer->va);
+
+   /* filter_mag linear */
+   desc[2] &= ~0x1000;
+
+   /* filter_min linear */
+   desc[2] &= ~0x0800;
+
+   /* levels < 1 */
+   desc[2] &= ~0x0600;
+
+
+   /* levels = 1, filter_mag = linear */
+   desc[1] &= ~0xff000000;
+   desc[1] |= 0x80000000;
+
+   /* wrap_s, clamp_to_edge */
+   desc[2] &= ~0xe000;
+   desc[2] |= 0x2000;
+
+   /* wrap_t, clamp_to_edge */
+
+   desc[2] &= ~0x070000;
+   desc[2] |= 0x010000;
+
+   lima_submit_add_bo(ctx->pp_submit, so->tex_desc->bo, LIMA_SUBMIT_BO_FLAG_READ);
    return &so->base;
 }
 
@@ -450,7 +508,12 @@ lima_sampler_view_destroy(struct pipe_context *pctx,
                          struct pipe_sampler_view *pview)
 {
    struct lima_sampler_view *view = lima_sampler_view(pview);
+   struct lima_context *ctx = lima_context(pctx);
+
+   lima_submit_remove_bo(ctx->pp_submit, view->tex_desc->bo);
    pipe_resource_reference(&pview->texture, NULL);
+   lima_buffer_free(view->tex_desc);
+
    debug_printf("%s: %p\n", __func__, view);
    free(view);
 }
@@ -461,8 +524,22 @@ lima_set_sampler_views(struct pipe_context *pctx,
                       unsigned start, unsigned nr,
                       struct pipe_sampler_view **views)
 {
+   uint32_t *descs;
+   struct lima_context *lima_ctx = lima_context(pctx);
+   struct lima_sampler_view *lima_sv;
+
    debug_printf("%s: shader: %d, start: %d, nr: %d, views: %p [0] %p\n", __func__,
                 shader, start, nr, views, views[0]);
+
+   descs = lima_ctx->tex_descs->map;
+   lima_ctx->bound_textures = nr;
+   for (int i = 0; i < nr; i++) {
+      lima_sv = lima_sampler_view(views[start + i]);
+      descs[i] = lima_sv->tex_desc->va;
+      printf("desc[%d] = %.8x\n", i, lima_sv->tex_desc->va);
+   }
+
+   lima_ctx->dirty |= LIMA_CONTEXT_DIRTY_TEX_DESC;
 }
 
 void

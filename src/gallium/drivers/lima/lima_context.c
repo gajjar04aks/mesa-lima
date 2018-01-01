@@ -61,6 +61,9 @@ lima_context_destroy(struct pipe_context *pctx)
    if (ctx->pp_buffer)
       lima_buffer_free(ctx->pp_buffer);
 
+   if (ctx->tex_descs)
+      lima_buffer_free(ctx->tex_descs);
+
    FREE(ctx);
 }
 
@@ -144,7 +147,14 @@ lima_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
       goto err_out;
 
    if (lima_submit_add_bo(ctx->pp_submit, ctx->pp_buffer->bo,
-                          LIMA_SUBMIT_BO_FLAG_READ | LIMA_SUBMIT_BO_FLAG_WRITE))
+                          LIMA_SUBMIT_BO_FLAG_READ))
+      goto err_out;
+
+   ctx->tex_descs = lima_buffer_alloc(screen, tex_desc_buffer_size,
+      LIMA_BUFFER_ALLOC_MAP | LIMA_BUFFER_ALLOC_VA);
+
+   if (lima_submit_add_bo(ctx->pp_submit, ctx->tex_descs->bo,
+                          LIMA_SUBMIT_BO_FLAG_READ))
       goto err_out;
 
    return &ctx->base;

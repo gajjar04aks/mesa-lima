@@ -152,6 +152,7 @@ struct lima_context {
       LIMA_CONTEXT_DIRTY_BLEND        = (1 << 11),
       LIMA_CONTEXT_DIRTY_STENCIL_REF  = (1 << 12),
       LIMA_CONTEXT_DIRTY_CONST_BUFF   = (1 << 13),
+      LIMA_CONTEXT_DIRTY_TEX_DESC     = (1 << 14),
    } dirty;
 
    struct u_upload_mgr *uploader;
@@ -206,6 +207,10 @@ struct lima_context {
    #define pp_plb_offset(i, n)       \
       (pp_plb_offset_start + i * ((pp_stack_offset - pp_plb_offset_start) / n))
 
+   struct lima_buffer *tex_descs;
+   #define tex_desc_buffer_size      0x1000
+   int bound_textures;
+
    struct lima_ctx_buff_state buffer_state[lima_ctx_buff_num];
 
    unsigned draw_start;
@@ -233,6 +238,7 @@ lima_sampler_state(struct pipe_sampler_state *psstate)
 
 struct lima_sampler_view {
    struct pipe_sampler_view base;
+   struct lima_buffer *tex_desc;
 };
 
 static inline struct lima_sampler_view *

@@ -38,16 +38,18 @@ static void ppir_codegen_encode_varying(ppir_node *node, void *code)
    ppir_dest *dest = &load->dest;
    int index = ppir_target_get_dest_reg_index(dest);
 
-   if ((dest->type == ppir_target_pipeline) &&
-       (dest->pipeline == ppir_pipeline_reg_discard))
+   if (node->op == ppir_op_load_coords)
       index = 15 << 2;
 
    ppir_debug("varying dest index %d\n", index);
    f->imm.dest = index >> 2;
-   f->imm.mask = dest->write_mask << (index & 0x3);
+   if (node->op == ppir_op_load_coords) {
+      f->imm.mask = 0x3 << 1;
+   } else {
+      f->imm.mask = dest->write_mask << (index & 0x3);
+   }
 
-   if ((node->op == ppir_op_load_varying) ||
-      (node->op == ppir_op_load_coords)) {
+   if (node->op == ppir_op_load_varying) {
       int num_components = load->num_components;
       int alignment = num_components == 3 ? 3 : num_components - 1;
 
@@ -61,6 +63,14 @@ static void ppir_codegen_encode_varying(ppir_node *node, void *code)
          f->imm.index = load->index;
       else
          f->imm.index = load->index << (2 - alignment);
+   }
+   if (node->op == ppir_op_load_coords) {
+      int alignment = 1;
+
+      f->imm.alignment = alignment;
+      f->imm.offset_vector = 0xf;
+
+      f->imm.index = load->index << 1;
    }
 }
 
@@ -207,6 +217,7 @@ static void ppir_codegen_encode_vec_add(ppir_node *node, void *code)
    f->dest = index >> 2;
    f->mask = dest->write_mask << dest_shift;
    f->dest_modifier = dest->modifier;
+   ppir_debug("vec_add, mask: %.8x\n", dest->write_mask);
 
    switch (node->op) {
    case ppir_op_add:
@@ -239,6 +250,13 @@ static void ppir_codegen_encode_vec_add(ppir_node *node, void *code)
    f->arg0_swizzle = encode_swizzle(src->swizzle, index & 0x3, dest_shift);
    f->arg0_absolute = src->absolute;
    f->arg0_negate = src->negate;
+
+   if (src->type == ppir_target_pipeline &&
+       src->pipeline == ppir_pipeline_reg_sampler) {
+      f->arg0_swizzle = 0xe4;
+      f->dest == index;
+   }
+   ppir_debug("mov arg0: %.8x, swizzle: %.8x\n", f->arg0_source, f->arg0_swizzle);
 
    if (alu->num_src > 1) {
       src = alu->src + 1;
@@ -433,6 +451,12 @@ static int encode_instr(ppir_instr *instr, void *code, void *last_code)
          uint8_t output[12] = {0};
 
          ppir_codegen_encode_slot[i](instr->slots[i], output);
+         ppir_debug("slot: %d\n", i);
+         for (int j = 0; j < 10; j++) {
+            ppir_debug("%.2x ", (int)output[j]);
+         }
+         ppir_debug("\n");
+         ppir_debug("offset: %d, size: %d\n", size, ppir_codegen_field_size[i]);
          bitcopy(ctrl + 1, size, output, ppir_codegen_field_size[i]);
 
          size += ppir_codegen_field_size[i];
