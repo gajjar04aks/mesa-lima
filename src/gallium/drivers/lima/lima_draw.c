@@ -626,6 +626,11 @@ lima_pack_render_state(struct lima_context *ctx)
       render->textures_address = ctx->tex_descs->va;
       render->aux0 |= ctx->bound_textures << 14;
       render->aux0 |= 0x20;
+      if (lima_dump_command_stream) {
+         printf("lima: add textures_desc at va %x\n",
+                ctx->tex_descs->va);
+         lima_dump_blob(ctx->tex_descs->map, 0x40, false);
+      }
    }
 
    if (ctx->buffer_state[lima_ctx_buff_pp_uniform].size) {

@@ -459,22 +459,21 @@ lima_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
    format = 0x16; /* LIMA_TEXEL_FORMAT_RGBA */
    flag0 = 1;
    flag1 = 0;
-   layout = 3;
+   layout = 0;
 
-   desc[0] = (flag0 << 7) || (flag1 << 6) | format;
+   desc[0] = (flag0 << 7) | (flag1 << 6) | format;
    /* Not cubemap */
    desc[1] = 0x400;
    desc[2] = (width << 22);
-   desc[3] = 0x10000 | (height << 3) || (width >> 10);
+   desc[3] = 0x10000 | (height << 3) | (width >> 10);
    desc[6] = layout << 13;
 
    lima_buffer_update(lima_res->buffer, LIMA_BUFFER_ALLOC_MAP | LIMA_BUFFER_ALLOC_VA);
    /* attach level 0 */
    desc[6] &= ~0xc0000000;
-   desc[6] |= (lima_res->buffer->va + 1024 * 1024) << 24;
+   desc[6] |= lima_res->buffer->va << 24;
    desc[7] &= ~0x00ffffff;
-   desc[7] |= (lima_res->buffer->va + 1024 * 1024) >> 8;
-   printf("level 0 va: %.8x\n", lima_res->buffer->va);
+   desc[7] |= lima_res->buffer->va >> 8;
 
    /* filter_mag linear */
    desc[2] &= ~0x1000;
@@ -484,7 +483,6 @@ lima_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
 
    /* levels < 1 */
    desc[2] &= ~0x0600;
-
 
    /* levels = 1, filter_mag = linear */
    desc[1] &= ~0xff000000;
