@@ -96,6 +96,9 @@ lima_resource_create_bo(struct pipe_screen *pscreen,
    if (templat->target == PIPE_BUFFER)
       should_tile = false;
 
+   if (templat->bind & PIPE_BIND_LINEAR)
+      should_tile = false;
+
    res->base = *templat;
    res->base.screen = pscreen;
    pipe_reference_init(&res->base.reference, 1);
@@ -482,9 +485,8 @@ lima_transfer_unmap(struct pipe_context *pctx,
    struct lima_bo *bo = res->bo;
    struct pipe_resource *pres;
 
-   pres = &res->base;
-
    if (trans->map) {
+      pres = &res->base;
       if (ptrans->usage & PIPE_TRANSFER_WRITE)
          lima_store_tiled_image(bo->map, trans->map,
                               &ptrans->box,
